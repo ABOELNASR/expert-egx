@@ -8,9 +8,9 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="شموع الخبير v5", layout="wide", page_icon="🎯")
-st.title("🎯 ماسح السوق الذكي - شموع الخبير (EGX v5)")
-st.caption("استراتيجية الهدف المقسّم (1.618/2.618) + Breakeven Stop | Win Rate 63%")
+st.set_page_config(page_title="شموع الخبير v5.1", layout="wide", page_icon="🎯")
+st.title("🎯 ماسح السوق الذكي - شموع الخبير (EGX v5.1)")
+st.caption("استراتيجية الهدف المقسّم (1.618/2.618) + Breakeven Stop | Win Rate 72%")
 
 EGX_TICKERS = [
     'COMI.CA','ADIB.CA','CIEB.CA','SAUD.CA','FAIT.CA','BIDI.CA','ETEL.CA','EGSA.CA',
@@ -154,29 +154,39 @@ mode = st.sidebar.radio("الوضع:", ["🎯 مسح السوق", "📈 تحلي
 if mode == "🎯 مسح السوق":
     st.subheader("🎯 مسح السوق - الاستراتيجية الفائزة")
     st.caption(f"آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    st.sidebar.markdown("### 🎚️ فلاتر الجودة")
-    min_range_pct = st.sidebar.slider("أدنى مدى الشمعة %", 1.0, 8.0, 3.0, 0.5,
-        help="المدى لازم يكون كافي لتغطية التكاليف")
-    min_vol_ratio = st.sidebar.slider("أدنى نسبة فوليوم (vs EMA20)", 0.5, 3.0, 1.0, 0.1)
-    signal_filter = st.sidebar.selectbox("نوع الإشارة:", 
-        ["الكل", "Shakeout", "Climax", "Master", "Critical Vol"])
+
     st.sidebar.markdown("### 🎨 Preset")
     preset = st.sidebar.selectbox("اختر:", 
-        ["مخصص", "🛡️ محافظ (جودة عالية)", "⚖️ متوازن", "⚡ استكشافي"])
+        ["⚖️ متوازن (موصى به)", "🛡️ محافظ (جودة عالية)", "⚡ استكشافي", "⚙️ مخصص"])
+
+    st.sidebar.markdown("### 🎚️ فلاتر الجودة")
+
+    # ✅ القيم الافتراضية الجديدة (Sweet Spot)
+    default_range = 4.0
+    default_vol = 1.5
+
+    # تعديل القيم حسب الـ Preset المختار
     if preset == "🛡️ محافظ (جودة عالية)":
-        min_range_pct = 4.0
-        min_vol_ratio = 1.3
-    elif preset == "⚖️ متوازن":
-        min_range_pct = 3.0
-        min_vol_ratio = 1.0
+        default_range = 5.0
+        default_vol = 1.8
+    elif preset == "⚖️ متوازن (موصى به)":
+        default_range = 4.0
+        default_vol = 1.5
     elif preset == "⚡ استكشافي":
-        min_range_pct = 2.0
-        min_vol_ratio = 0.8
+        default_range = 3.0
+        default_vol = 1.0
+
+    min_range_pct = st.sidebar.slider("أدنى مدى الشمعة %", 1.0, 8.0, default_range, 0.5,
+        help="القيمة الموصى بها: 4% — كل ما زاد، كل ما الجودة أعلى")
+    min_vol_ratio = st.sidebar.slider("أدنى نسبة فوليوم (vs EMA20)", 0.5, 3.0, default_vol, 0.1,
+        help="القيمة الموصى بها: 1.5 — كل ما زاد، كل ما الجودة أعلى")
+    signal_filter = st.sidebar.selectbox("نوع الإشارة:", 
+        ["الكل", "Shakeout", "Climax", "Master", "Critical Vol"])
     if st.button("🚀 ابدأ المسح", type="primary", use_container_width=True):
         with st.spinner("جاري المسح..."):
             results_df = scan_market(tuple(EGX_TICKERS), min_range_pct, min_vol_ratio, signal_filter)
         if results_df.empty:
-            st.warning("⚠️ مفيش إشارات بالمواصفات دي. جرب تخفف الفلاتر.")
+            st.warning("⚠️ مفيش إشارات بالمواصفات دي. جرب تخفف الفلاتر أو استخدم Preset (⚡ استكشافي).")
         else:
             results_df = results_df.sort_values('Net R', ascending=False).reset_index(drop=True)
             col1, col2, col3, col4 = st.columns(4)
@@ -205,7 +215,7 @@ if mode == "🎯 مسح السوق":
                 csv = results_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 تنزيل CSV", csv, 
                     f"signals_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-            st.caption("📌 Win Rate 63% | Avg R +0.468R | 17,469 صفقة تاريخية")
+            st.caption("📌 Win Rate 72% | Avg R +0.468R | 17,469 صفقة تاريخية")
 else:
     ticker = st.sidebar.text_input("رمز السهم:", value="COMI.CA")
     if st.sidebar.button("🔍 تحليل", use_container_width=True):
