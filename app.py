@@ -304,10 +304,7 @@ inject_css()
 
 # === Header ===
 st.markdown('<div class="expert-logo">EXPERT-EGX</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="expert-tagline">ماسح السوق الذكي — الإصدار 6 | استراتيجية الهدف المقسّم (1.618 / 2.618) مع Breakeven Stop</div>',
-    unsafe_allow_html=True
-)
+st.markdown('<div class="expert-tagline">الإصدار 6</div>', unsafe_allow_html=True)
 st.markdown('<div class="expert-divider"></div>', unsafe_allow_html=True)
 
 # === Sidebar config ===
@@ -315,7 +312,7 @@ st.sidebar.markdown('<div class="sidebar-title">الإعدادات</div>', unsaf
 mode = st.sidebar.radio("الوضع", ["مسح السوق", "تحليل سهم واحد"], label_visibility="collapsed")
 
 if mode == "مسح السوق":
-    st.subheader("مسح السوق — الاستراتيجية الفائزة")
+    st.subheader("مسح السوق")
     st.caption(f"آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
     st.sidebar.markdown('<div class="sidebar-title">Preset</div>', unsafe_allow_html=True)
@@ -401,7 +398,6 @@ if mode == "مسح السوق":
                     "تنزيل CSV", csv,
                     f"signals_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv"
                 )
-            st.caption("Win Rate 74% | Avg R +0.196R | 1,347 صفقة تاريخية")
 
 else:
     ticker = st.sidebar.text_input("رمز السهم", value="COMI.CA")
