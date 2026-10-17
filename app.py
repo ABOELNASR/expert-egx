@@ -216,7 +216,6 @@ def calculate_trade_plan(row, cost_pct=0.005, wr=0.74):
     r_t2 = (t2 - entry) / risk_abs
     cost_in_r = (cost_pct * entry) / risk_abs
 
-    # Expectancy = P(Full)×avg_full_R + P(Partial)×avg_partial_R − P(Loss)×1R − costs
     full_pct = wr * 0.53
     partial_pct = wr * 0.47
     loss_pct = 1 - wr
@@ -235,6 +234,40 @@ def calculate_trade_plan(row, cost_pct=0.005, wr=0.74):
         'r_t1': round(r_t1, 2),
         'r_t2': round(r_t2, 2),
         'net_r': round(net_r, 3),
+    }
+
+# ========== Signal Quality Score ==========
+def calculate_quality_score(row):
+    # 1. Volume (30 pts) - Vol_Ratio / 3.0
+    vol_pts = min(row['Vol_Ratio_EMA20'] / 3.0, 1.0) * 30
+    
+    # 2. Range Ratio (25 pts) - Range_Ratio / 2.5
+    range_pts = min(row['Range_Ratio'] / 2.5, 1.0) * 25
+    
+    # 3. Close Position (25 pts)
+    close_pts = row['Close_Position'] * 25
+    
+    # 4. Lower Wick / Exhaustion (20 pts) - Lower_Wick_Ratio / 0.5
+    wick_pts = min(row['Lower_Wick_Ratio'] / 0.5, 1.0) * 20
+    
+    total = vol_pts + range_pts + close_pts + wick_pts
+    
+    if total >= 85:
+        quality = "ممتاز"
+    elif total >= 70:
+        quality = "جيد"
+    elif total >= 50:
+        quality = "مقبول"
+    else:
+        quality = "ضعيف"
+        
+    return {
+        'score': round(total, 1),
+        'quality': quality,
+        'vol_pts': round(vol_pts, 1),
+        'range_pts': round(range_pts, 1),
+        'close_pts': round(close_pts, 1),
+        'wick_pts': round(wick_pts, 1)
     }
 
 # ========== Scan ==========
@@ -273,18 +306,12 @@ def scan_market(tickers_tuple, min_range_pct, min_vol_ratio, signal_filter, cand
             if plan is None:
                 continue
 
-            if plan['net_r'] >= 0.15:
-                quality = "ممتاز"
-            elif plan['net_r'] >= 0.10:
-                quality = "جيد"
-            elif plan['net_r'] >= 0.05:
-                quality = "مقبول"
-            else:
-                quality = "ضعيف"
+            quality_data = calculate_quality_score(last)
 
             results.append({
                 'السهم': ticker.replace('.CA',''),
-                'الجودة': quality,
+                'الدرجة': quality_data['score'],
+                'الجودة': quality_data['quality'],
                 'الإشارة': last['Signal_Type'],
                 'الشمعة': 'مكتملة' if is_closed else 'جارية',
                 'السعر': round(last['Close'], 2),
@@ -294,9 +321,13 @@ def scan_market(tickers_tuple, min_range_pct, min_vol_ratio, signal_filter, cand
                 'الهدف 2': plan['t2'],
                 'R:R T1': plan['r_t1'],
                 'R:R T2': plan['r_t2'],
-                'المخاطرة %': plan['risk_pct'],
-                'المدى %': plan['range_pct'],
                 'Net R': plan['net_r'],
+                'Vol_Ratio': round(last['Vol_Ratio_EMA20'], 2),
+                'Range_Ratio': round(last['Range_Ratio'], 2),
+                'نقاط الفوليوم': quality_data['vol_pts'],
+                'نقاط المدى': quality_data['range_pts'],
+                'نقاط الإغلاق': quality_data['close_pts'],
+                'نقاط الاستنزاف': quality_data['wick_pts'],
             })
         except Exception:
             continue
@@ -396,18 +427,26 @@ if st.button("بدء المسح", type="primary", use_container_width=True):
     if results_df.empty:
         st.warning("مفيش إشارات بالمواصفات دي. جرب تخفف الفلاتر أو استخدم Preset استكشافي.")
     else:
-        results_df = results_df.sort_values('Net R', ascending=False).reset_index(drop=True)
+        results_df = results_df.sort_values('الدرجة', ascending=False).reset_index(drop=True)
+        
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("عدد الإشارات", len(results_df))
-        col2.metric("أعلى Net R", f"+{results_df['Net R'].max():.3f}R")
-        col3.metric("متوسط Net R", f"+{results_df['Net R'].mean():.3f}R")
-        col4.metric("أعلى R:R T2", f"{results_df['R:R T2'].max():.2f}R")
+        col2.metric("أعلى درجة جودة", f"{results_df['الدرجة'].max():.1f}")
+        col3.metric("متوسط الجودة", f"{results_df['الدرجة'].mean():.1f}")
+        col4.metric("أعلى فوليوم", f"{results_df['Vol_Ratio'].max():.2f}x")
 
         st.divider()
         st.subheader(f"{len(results_df)} سهم عليهم إشارات:")
 
         for _, row in results_df.iterrows():
-            header = f"**{row['السهم']}**  ·  Net R: +{row['Net R']:.3f}"
+            header = f"**{row['السهم']}**  ·  الجودة: {row['الدرجة']}/100  ·  {row['الجودة']}"
+            
+            # لون شريط التقدم بناءً على الجودة
+            if row['الدرجة'] >= 85: bar_color = "green"
+            elif row['الدرجة'] >= 70: bar_color = "blue"
+            elif row['الدرجة'] >= 50: bar_color = "orange"
+            else: bar_color = "red"
+            
             with st.expander(header, expanded=(row.name < 3)):
                 st.markdown(
                     f"{signal_badge(row['الإشارة'])} &nbsp; "
@@ -415,6 +454,7 @@ if st.button("بدء المسح", type="primary", use_container_width=True):
                     f"{candle_badge(row['الشمعة'] == 'مكتملة')}",
                     unsafe_allow_html=True
                 )
+                
                 c1, c2, c3, c4, c5, c6 = st.columns(6)
                 c1.metric("السعر", row['السعر'])
                 c2.metric("الدخول", row['الدخول'])
@@ -422,23 +462,35 @@ if st.button("بدء المسح", type="primary", use_container_width=True):
                 c4.metric("T1 (50%)", row['الهدف 1'])
                 c5.metric("T2 (50%)", row['الهدف 2'])
                 c6.metric("Net R", f"+{row['Net R']:.3f}")
-
+                
+                st.markdown(f"**درجة الجودة:** {row['الدرجة']} / 100")
+                # شريط تقدم ملون (streamlit st.progress بياخد لون واحد بس افتراضي، بس هنعتمد على القيمة)
+                st.progress(int(row['الدرجة']) / 100)
+                
                 st.caption(
-                    f"R:R T1 = {row['R:R T1']:.2f}R | R:R T2 = {row['R:R T2']:.2f}R | "
-                    f"المخاطرة: {row['المخاطرة %']}% | المدى: {row['المدى %']}%"
+                    f"**تفصيل الجودة:** فوليوم ({row['نقاط الفوليوم']}/30) | "
+                    f"مدى ({row['نقاط المدى']}/25) | "
+                    f"إغلاق ({row['نقاط الإغلاق']}/25) | "
+                    f"استنزاف ({row['نقاط الاستنزاف']}/20)"
+                )
+                st.caption(
+                    f"**R:R** T1 = {row['R:R T1']:.2f}R | R:R T2 = {row['R:R T2']:.2f}R | "
+                    f"**Vol Ratio** = {row['Vol_Ratio']}x"
                 )
                 st.caption(
                     f"التفعيل: اختراق {row['الدخول']} | الإبطال: كسر {row['الوقف']}"
                 )
 
-                progress_val = min(100, max(0, row['Net R'] * 500))
-                st.progress(progress_val / 100)
-
         st.divider()
         with st.expander("جدول مختصر"):
-            st.dataframe(results_df, use_container_width=True, hide_index=True)
+            # عرض أعمدة محددة في الجدول ليكون أنظف
+            display_cols = ['السهم', 'الدرجة', 'الجودة', 'الإشارة', 'الشمعة', 
+                            'الدخول', 'الوقف', 'الهدف 1', 'الهدف 2', 
+                            'R:R T1', 'R:R T2', 'Net R', 'Vol_Ratio']
+            st.dataframe(results_df[display_cols], use_container_width=True, hide_index=True)
+            
             csv = results_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
-                "تنزيل CSV", csv,
+                "تنزيل CSV كامل", csv,
                 f"signals_{now_cairo.strftime('%Y%m%d')}.csv", "text/csv"
             )
