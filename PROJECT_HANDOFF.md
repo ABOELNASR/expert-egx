@@ -1,12 +1,3 @@
-```markdown
-════════════════════════════════════════════════════════════════
-📄 اسم الملف:     PROJECT_HANDOFF.md
-📂 المسار:        الجذر (root) — بجوار app.py و requirements.txt
-🔗 رابط التعديل:  https://github.com/ABOELNASR/expert-egx/edit/main/PROJECT_HANDOFF.md
-📌 الإصدار:       v6.1
-📝 Commit:        docs: update to v6.1
-════════════════════════════════════════════════════════════════
-
 # 🎯 مشروع ماسح شموع الخبير - EGX
 ## وثيقة تسليم المشروع (Project Handoff Document)
 
@@ -146,25 +137,21 @@
 ## 📁 هيكل المشروع
 
 ```
-
 expert-egx/
 ├── app.py              # التطبيق الرئيسي (Streamlit)
 ├── requirements.txt    # المكتبات المطلوبة
 ├── PROJECT_HANDOFF.md  # وثيقة التسليم (هذا الملف)
 └── README.md          # وصف المشروع
-
 ```
 
 ### `requirements.txt`
 
 ```
-
 streamlit
 yfinance
 pandas
 numpy
 plotly
-
 ```
 
 ---
@@ -282,4 +269,3 @@ plotly
 **آخر تحديث:** 17 أكتوبر 2026  
 **الإصدار:** v6.1  
 **الحالة:** ✅ Production Ready
-```
