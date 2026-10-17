@@ -8,9 +8,9 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="شموع الخبير v5.1", layout="wide", page_icon="🎯")
-st.title("🎯 ماسح السوق الذكي - شموع الخبير (EGX v5.1)")
-st.caption("استراتيجية الهدف المقسّم (1.618/2.618) + Breakeven Stop | Win Rate 72%")
+st.set_page_config(page_title="شموع الخبير v6", layout="wide", page_icon="🎯")
+st.title("🎯 ماسح السوق الذكي - شموع الخبير (EGX v6)")
+st.caption("استراتيجية الهدف المقسّم (1.618/2.618) + Breakeven Stop | Win Rate 74%")
 
 EGX_TICKERS = [
     'COMI.CA','ADIB.CA','CIEB.CA','SAUD.CA','FAIT.CA','BIDI.CA','ETEL.CA','EGSA.CA',
@@ -40,55 +40,70 @@ def build_strategy_features(df):
     df['Upper_Wick_Ratio'] = df['Upper_Wick'] / df['Range_HL'].replace(0, 1)
     df['Lower_Wick_Ratio'] = df['Lower_Wick'] / df['Range_HL'].replace(0, 1)
     df['Range_Pct'] = df['Range_HL'] / df['Close']
+    
     df['Vol_EMA20'] = df['Volume'].ewm(span=20, adjust=False).mean()
     df['Vol_Ratio_EMA20'] = df['Volume'] / df['Vol_EMA20'].replace(0, 1)
     df['Vol_Mean_20'] = df['Volume'].rolling(20).mean()
     df['Vol_Std_20'] = df['Volume'].rolling(20).std()
     df['Vol_Bollinger_Lower'] = df['Vol_Mean_20'] - df['Vol_Std_20']
     df['Is_Critical_Vol'] = (df['Volume'] < df['Vol_Bollinger_Lower']).astype(int)
+    
     df['Avg_Range_20'] = df['Range_HL'].rolling(20).mean()
     df['Range_Ratio'] = df['Range_HL'] / df['Avg_Range_20'].replace(0, 1)
+    
     df['Is_Buyer'] = ((df['Close_Position'] > 0.5) | (df['Lower_Wick'] > df['Upper_Wick'])).astype(int)
     df['Is_Maker'] = (df['Volume'] > df['Vol_EMA20']).astype(int)
     df['Is_Master'] = ((df['Range_Ratio'] > 1.5) & (df['Volume'] > df['Vol_EMA20'])).astype(int)
     df['Is_Downtrend'] = (df['Close'] < df['Close'].shift(10)).astype(int)
+    
     df['Is_Shakeout'] = (
         (df['Lower_Wick_Ratio'] > 0.5) &
         (df['Close_Position'] > 0.5) &
         (df['Is_Downtrend'] == 1) &
         (df['Is_Master'] == 1)
     ).astype(int)
+    
     df['Is_Climax'] = (
         (df['Is_Downtrend'] == 1) &
         (df['Volume'] > 2 * df['Vol_EMA20']) &
         (df['Range_Ratio'] > 1.5) &
         (df['Close_Position'] > 0.4)
     ).astype(int)
+    
     df['Is_Decision'] = (
         (df['Is_Master'] == 1) |
         (df['Is_Shakeout'] == 1) |
         (df['Is_Climax'] == 1) |
         ((df['Is_Critical_Vol'] == 1) & (df['Is_Buyer'] == 1) & (df['Is_Downtrend'] == 1))
     ).astype(int)
+    
     df['Signal_Type'] = 'None'
     df.loc[df['Is_Shakeout']==1, 'Signal_Type'] = '🟡 Shakeout'
     df.loc[df['Is_Climax']==1, 'Signal_Type'] = '🟣 Climax'
     df.loc[(df['Is_Master']==1) & (df['Signal_Type']=='None'), 'Signal_Type'] = '⭐ Master'
     df.loc[(df['Is_Critical_Vol']==1) & (df['Is_Buyer']==1) & (df['Is_Downtrend']==1) & (df['Signal_Type']=='None'), 'Signal_Type'] = '🔵 Critical Vol'
+    
     return df
 
 def calculate_trade_plan(row, cost_pct=0.005):
     entry = row['High']
-    stop = row['Low']
+    # ✅ الوقف الجديد: 1% تحت القاع
+    stop = row['Low'] * 0.99 
     range_hl = row['Range_HL']
-    if range_hl <= 0 or pd.isna(range_hl):
+    
+    if range_hl <= 0 or pd.isna(range_hl) or entry <= stop:
         return None
+    
     t1 = row['Low'] + 1.618 * range_hl
     t2 = row['Low'] + 2.618 * range_hl
-    expected_r = 0.468
+    
+    # ✅ متوسط R الحقيقي بعد التعديل
+    expected_r = 0.196 
     risk_pct = (entry - stop) / entry * 100
-    cost_in_r = (cost_pct * entry) / range_hl
-    net_r = expected_r - cost_in_r if range_hl > 0 else 0
+    risk_abs = entry - stop
+    cost_in_r = (cost_pct * entry) / risk_abs if risk_abs > 0 else 0
+    net_r = expected_r - cost_in_r if risk_abs > 0 else 0
+    
     return {
         'entry': round(entry, 2),
         'stop': round(stop, 2),
@@ -113,15 +128,19 @@ def scan_market(tickers_tuple, min_range_pct, min_vol_ratio, signal_filter):
             df = data[ticker].dropna()
             if len(df) < 60: continue
             if df['Volume'].tail(30).mean() < 50000: continue
+            
             df = build_strategy_features(df)
             if len(df) < 30: continue
+            
             last = df.iloc[-1]
             if last['Is_Decision'] != 1: continue
             if last['Range_Pct'] * 100 < min_range_pct: continue
             if last['Vol_Ratio_EMA20'] < min_vol_ratio: continue
             if signal_filter != "الكل" and signal_filter not in last['Signal_Type']: continue
+            
             plan = calculate_trade_plan(last)
             if plan is None: continue
+            
             if plan['net_r'] >= 0.4:
                 quality = "🥇 ممتاز"
             elif plan['net_r'] >= 0.2:
@@ -130,6 +149,7 @@ def scan_market(tickers_tuple, min_range_pct, min_vol_ratio, signal_filter):
                 quality = "🥉 مقبول"
             else:
                 quality = "⚠️ ضعيف"
+                
             results.append({
                 'السهم': ticker.replace('.CA',''),
                 'الجودة': quality,
@@ -161,7 +181,7 @@ if mode == "🎯 مسح السوق":
 
     st.sidebar.markdown("### 🎚️ فلاتر الجودة")
 
-    # ✅ القيم الافتراضية الجديدة (Sweet Spot)
+    # القيم الافتراضية الجديدة
     default_range = 4.0
     default_vol = 1.5
 
@@ -180,11 +200,14 @@ if mode == "🎯 مسح السوق":
         help="القيمة الموصى بها: 4% — كل ما زاد، كل ما الجودة أعلى")
     min_vol_ratio = st.sidebar.slider("أدنى نسبة فوليوم (vs EMA20)", 0.5, 3.0, default_vol, 0.1,
         help="القيمة الموصى بها: 1.5 — كل ما زاد، كل ما الجودة أعلى")
+    
     signal_filter = st.sidebar.selectbox("نوع الإشارة:", 
         ["الكل", "Shakeout", "Climax", "Master", "Critical Vol"])
+        
     if st.button("🚀 ابدأ المسح", type="primary", use_container_width=True):
         with st.spinner("جاري المسح..."):
             results_df = scan_market(tuple(EGX_TICKERS), min_range_pct, min_vol_ratio, signal_filter)
+            
         if results_df.empty:
             st.warning("⚠️ مفيش إشارات بالمواصفات دي. جرب تخفف الفلاتر أو استخدم Preset (⚡ استكشافي).")
         else:
@@ -194,8 +217,10 @@ if mode == "🎯 مسح السوق":
             col2.metric("أعلى Net R", f"+{results_df['Net R'].max():.3f}R")
             col3.metric("متوسط Net R", f"+{results_df['Net R'].mean():.3f}R")
             col4.metric("أقل مخاطرة", f"{results_df['المخاطرة %'].min():.2f}%")
+            
             st.divider()
             st.subheader(f"✅ {len(results_df)} سهم عليهم إشارات:")
+            
             for _, row in results_df.iterrows():
                 with st.expander(f"**{row['السهم']}** — {row['الإشارة']} — {row['الجودة']} — Net R: +{row['Net R']:.3f}", 
                                 expanded=(row.name < 3)):
@@ -206,16 +231,20 @@ if mode == "🎯 مسح السوق":
                     c4.metric("الهدف 1 (50%)", row['الهدف 1'])
                     c5.metric("الهدف 2 (50%)", row['الهدف 2'])
                     c6.metric("Net R", f"+{row['Net R']:.3f}")
+                    
                     st.caption(f"**المخاطرة:** {row['المخاطرة %']}% | **المدى:** {row['المدى %']}% | **التفعيل:** اختراق {row['الدخول']} | **الإبطال:** كسر {row['الوقف']}")
+                    
                     progress_val = min(100, max(0, row['Net R'] * 200))
                     st.progress(progress_val / 100)
+                    
             st.divider()
             with st.expander("📋 جدول مختصر (Excel-style)"):
                 st.dataframe(results_df, use_container_width=True, hide_index=True)
                 csv = results_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 تنزيل CSV", csv, 
                     f"signals_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-            st.caption("📌 Win Rate 72% | Avg R +0.468R | 17,469 صفقة تاريخية")
+            st.caption("📌 Win Rate 74% | Avg R +0.196R | 1,347 صفقة تاريخية")
+
 else:
     ticker = st.sidebar.text_input("رمز السهم:", value="COMI.CA")
     if st.sidebar.button("🔍 تحليل", use_container_width=True):
@@ -227,6 +256,7 @@ else:
                 df = build_strategy_features(df_raw)
                 last = df.iloc[-1]
                 plan = calculate_trade_plan(last) if last['Is_Decision'] == 1 else None
+                
                 if last['Is_Decision'] == 1 and plan:
                     st.success(f"🎯 **{last['Signal_Type']}** — Net R: +{plan['net_r']:.3f}")
                     c1, c2, c3, c4, c5 = st.columns(5)
@@ -235,23 +265,28 @@ else:
                     c3.metric("الوقف", plan['stop'])
                     c4.metric("T1 (1.618)", plan['t1'])
                     c5.metric("T2 (2.618)", plan['t2'])
-                    st.info(f"**الخطة:** ادخل عند اختراق {plan['entry']} | T1 عند {plan['t1']} (بيع 50% + نقل الوقف للدخول) | T2 عند {plan['t2']} | إبطال عند {plan['stop']}")
+                    st.info(f"**الخطة:** ادخل عند اختراق {plan['entry']} | الوقف تحت {plan['stop']} | T1 عند {plan['t1']} (بيع 50% + نقل الوقف للدخول) | T2 عند {plan['t2']}")
                 else:
                     st.info("ℹ️ مفيش إشارة على آخر شمعة.")
+                
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
                                      row_heights=[0.7, 0.3],
                                      subplot_titles=("السعر مع الإشارات", "الفوليوم"))
+                
                 fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], 
                     low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
+                
                 masters = df[df['Is_Master']==1]
                 shakeouts = df[df['Is_Shakeout']==1]
                 climaxes = df[df['Is_Climax']==1]
+                
                 fig.add_trace(go.Scatter(x=masters.index, y=masters['High']+0.5, mode='markers',
                     marker=dict(symbol='star', size=12, color='gold'), name='Master'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=shakeouts.index, y=shakeouts['Low']-0.5, mode='markers',
                     marker=dict(symbol='triangle-up', size=14, color='cyan'), name='Shakeout'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=climaxes.index, y=climaxes['Low']-0.5, mode='markers',
                     marker=dict(symbol='triangle-up', size=14, color='magenta'), name='Climax'), row=1, col=1)
+                
                 if plan:
                     for level, price, color in [('Entry', plan['entry'], 'blue'),
                                                   ('Stop', plan['stop'], 'red'),
@@ -259,10 +294,13 @@ else:
                                                   ('T2', plan['t2'], 'darkgreen')]:
                         fig.add_hline(y=price, line_dash="dash", line_color=color,
                             annotation_text=f"{level}: {price}", row=1, col=1)
+                            
                 fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume',
                     marker_color=['green' if c > o else 'red' for c, o in zip(df['Close'], df['Open'])]),
                     row=2, col=1)
+                    
                 fig.add_trace(go.Scatter(x=df.index, y=df['Vol_EMA20'], name='Vol EMA20',
                     line=dict(color='orange', width=2)), row=2, col=1)
+                    
                 fig.update_layout(height=750, xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
